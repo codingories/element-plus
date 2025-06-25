@@ -386,7 +386,7 @@ describe('Table.vue', () => {
       await doubleWait()
       expect(
         (wrapper.vm as ComponentPublicInstance & { filters: any }).filters[
-          'director'
+        'director'
         ]
       ).toEqual(['John Lasseter'])
       expect(
@@ -440,7 +440,7 @@ describe('Table.vue', () => {
       await doubleWait()
       expect(
         (wrapper.vm as ComponentPublicInstance & { filters: any }).filters[
-          'director'
+        'director'
         ]
       ).toEqual([])
       expect([
@@ -1940,7 +1940,7 @@ describe('Table.vue', () => {
       expandIcon.trigger('click')
       await doubleWait()
       expect(expandIcon.classes()).toContain('el-table__expand-icon--expanded')
-      ;(wrapper.vm as any).closeExpandRow()
+        ; (wrapper.vm as any).closeExpandRow()
       await doubleWait()
       expect(expandIcon.classes()).not.toContain(
         'el-table__expand-icon--expanded'
@@ -2425,5 +2425,103 @@ describe('Table.vue', () => {
     )
 
     mockRangeRect.mockRestore()
+  })
+
+  // https://github.com/element-plus/element-plus/issues/21024
+  it.only('displays merged cells and renders async-loaded data correctly after expansion', async () => {
+    const initialData = [
+      {
+        id: 1,
+        date: '2016-05-01',
+        name: '合并1',
+        hasChildren: true
+      },
+      {
+        id: 2,
+        date: '2016-05-01',
+        name: '合并2',
+        hasChildren: false
+      }
+    ]
+
+    const load = vi.fn((row, treeNode, resolve) => {
+      if (row.id === 1) {
+        resolve([
+          { id: 3, date: '2017-05-01', name: '派大星', hasChildren: false },
+          { id: 4, date: '2017-05-01', name: '海绵宝宝', hasChildren: false }
+        ])
+      }
+    })
+
+    // Mock span method to merge cells in the first column
+    const spanMethod = ({ row, column, rowIndex, columnIndex }) => {
+      if (columnIndex === 0) {
+        if (rowIndex % 2 === 0) {
+          return {
+            rowspan: 2,
+            colspan: 1
+          }
+        } else {
+          return {
+            rowspan: 0,
+            colspan: 0
+          }
+        }
+      }
+    }
+
+    const wrapper = mount({
+      components: { ElTable, ElTableColumn },
+      template: `
+        <el-table
+          :data="tableData"
+          :span-method="spanMethod"
+          :load="load"
+          :row-key="row => row.id"
+          :tree-props="{ hasChildren: 'hasChildren' }"
+          lazy
+        >
+          <el-table-column prop="date" label="Date" />
+          <el-table-column prop="name" label="Name" />
+        </el-table>
+      `,
+      setup() {
+        const tableData = initialData
+        return {
+          tableData,
+          spanMethod,
+          load
+        }
+      }
+    })
+
+    await doubleWait()
+    // console.log(wrapper.html())
+
+    const expandTrigger = wrapper.find('.el-table__expand-icon')
+    await expandTrigger.trigger('click')
+
+    // 等待懒加载模拟完成（1秒）
+    await new Promise(resolve => setTimeout(resolve, 1100))
+    await nextTick()
+
+    let rows = wrapper.findAll('.el-table__body-wrapper tbody tr')
+
+    const tds1 = rows[0].findAll('td')
+    const tds2 = rows[1].findAll('td')
+
+    // '派大星'
+    // '合并2'
+    expect(tds2[0].text()).toBe('合并2')
+
+    const tds3 = rows[2].findAll('td')
+    // '海绵宝宝'
+    // '派大星'
+    expect(tds3[1].text()).toBe('派大星')
+
+    const tds4 = rows[3].findAll('td')
+    // 合并2
+    // 海绵宝宝
+    expect(tds4[0].text()).toBe('海绵宝宝')
   })
 })
